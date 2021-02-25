@@ -44,6 +44,7 @@ left join
     where dt=date_add('$do_date',-30)
 )30d_ago
 on nvl(old.mid_id,today.mid_id)=30d_ago.mid_id;
+# 删除历史分区1/2。因为是外部表，直接删除分区不会删除数据，所以用了2步。
 alter table ${APP}.dwt_visitor_topic drop if exists partition(dt='$clear_date');
 "
 
@@ -53,6 +54,7 @@ dwt_user_topic="
 case $1 in
     "dwt_visitor_topic" )
         spark-sql -e "$dwt_visitor_topic"
+        # 删除历史分区2/2。因为是外部表，直接删除分区不会删除数据，所以用了2步。
         hadoop fs -rm -r -f /warehouse/gmall/dwt/dwt_visitor_topic/dt=$clear_date
     ;;
     "dwt_user_topic" )
