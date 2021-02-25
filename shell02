@@ -1,0 +1,67 @@
+#!/bin/bash
+
+APP=gmall
+# 如果是输入的日期按照取输入日期；如果没输入日期取当前时间的前一天
+if [ -n "$2" ] ;then
+    do_date=$2
+else 
+    do_date=`date -d "-1 day" +%F`
+    echo "Apple"
+    exit
+fi
+
+clear_date=`date -d "$do_date -2 day" +%F`
+
+dwt_visitor_topic="
+insert overwrite table ${APP}.dwt_visitor_topic partition(dt='$do_date')
+select
+    nvl(today.mid_id,old.mid_id),
+    case when old.mid_id is null and today.is_new=1 then '$do_date'
+         when old.mid_id is null and today.is_new=0 then date_add('$do_date',-1)
+         else old.visit_date_first end,
+    if(today.mid_id is not null,'$do_date',old.visit_date_last),
+    nvl(old.visit_last_30d_day_count,0)+if(today.mid_id is null,0,1)-if(30d_ago.mid_id is null,0,1)
+from
+(
+    select
+        mid_id
+    from ${APP}.dwt_visitor_topic
+    where dt=date_add('$do_date',-1)
+)old
+full outer join
+(
+    select
+        mid_id
+    from ${APP}.dws_visitor_action_daycount
+    where dt='$do_date'
+)today
+on old.mid_id=today.mid_id
+left join
+(
+    select
+        mid_id
+    from ${APP}.dws_visitor_action_daycount
+    where dt=date_add('$do_date',-30)
+)30d_ago
+on nvl(old.mid_id,today.mid_id)=30d_ago.mid_id;
+alter table ${APP}.dwt_visitor_topic drop if exists partition(dt='$clear_date');
+"
+
+dwt_user_topic="
+"
+
+case $1 in
+    "dwt_visitor_topic" )
+        spark-sql -e "$dwt_visitor_topic"
+        hadoop fs -rm -r -f /warehouse/gmall/dwt/dwt_visitor_topic/dt=$clear_date
+    ;;
+    "dwt_user_topic" )
+        spark-sql -e "$dwt_user_topic"
+        hadoop fs -rm -r -f /warehouse/gmall/dwt/dwt_user_topic/dt=$clear_date
+    ;;
+    "all" )
+        spark-sql -e "$dwt_visitor_topic$dwt_user_topic$dwt_sku_topic$dwt_activity_topic$dwt_coupon_topic$dwt_area_topic"
+        hadoop fs -rm -r -f /warehouse/gmall/dwt/dwt_visitor_topic/dt=$clear_date
+        hadoop fs -rm -r -f /warehouse/gmall/dwt/dwt_user_topic/dt=$clear_date
+    ;;
+esac
