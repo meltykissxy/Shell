@@ -1,0 +1,75 @@
+#!/bin/bash
+
+APP=gmall
+
+if [ -n "$2" ] ;then
+   do_date=$2
+else 
+   echo "请传入日期参数"
+	do_date=`date -d "-1 day" +%F`
+   exit
+fi 
+
+dim_sku_info="
+with
+sku as
+(
+	select
+		id,
+		price,
+		collect_set(named_struct('attr_id',attr_id,'value_id',value_id,'attr_name',attr_name,'value_name',value_name)) attr
+	from ${APP}.ods_sku_info
+	where dt='$do_date'
+),
+spu as
+(
+	select
+		id,
+		spu_name
+	from ${APP}.ods_spu_info
+	where dt='$do_date'
+)
+
+insert overwrite table ${APP}.dim_sku_info partition(dt='$do_date')
+select
+	sku.id
+from sku
+left join spu on sku.spu_id=spu.id;
+"
+
+dim_activity_rule_info="
+insert overwrite table ${APP}.dim_activity_rule_info partition(dt='$do_date')
+select
+	ar.id,
+	ar.activity_id,
+	ai.activity_name
+from
+(
+	select
+		id,
+		activity_id
+	from ${APP}.ods_activity_rule
+	where dt='$do_date'
+)ar
+left join
+(
+	select
+		id,
+		activity_name
+	from ${APP}.ods_activity_info
+	where dt='$do_date'
+)ai
+on ar.activity_id=ai.id;
+"
+
+case $1 in
+"dim_user_info"){
+	spark-sql -e "$dim_user_info"
+};;
+"dim_sku_info"){
+	spark-sql -e "$dim_sku_info"
+};;
+"all"){
+	spark-sql -e "$dim_user_info$dim_sku_info$dim_coupon_info$dim_activity_rule_info$dim_base_province"
+};;
+esac
